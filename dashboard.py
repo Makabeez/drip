@@ -42,6 +42,8 @@ def build_app(
     get_risk_snapshot,
     get_loop_counters,
     sqlite_path: str,
+    get_cctp_bridges=None,
+    trigger_cctp_bridge=None,
 ) -> FastAPI:
     """
     Factory that wires the dashboard to live agent components.
@@ -52,6 +54,9 @@ def build_app(
         get_loop_counters: callable → dict with started_at, signals_received,
                            trades_opened, trades_closed, position_opened_at
         sqlite_path: path to drip.sqlite for trace queries
+        get_cctp_bridges: optional callable → list of CCTP bridge dicts
+        trigger_cctp_bridge: optional async callable(amount_usdc) →
+                             BridgeResult; called by POST /cctp/trigger
     """
     app = FastAPI(title="Drip Dashboard")
 
@@ -183,6 +188,19 @@ def build_app(
             except Exception:
                 pass
 
+        # CCTP bridges (last 10) — only if callable was provided
+        bridges: list[dict[str, Any]] = []
+        cctp_enabled = bool(get_cctp_bridges)
+        trigger_enabled = bool(trigger_cctp_bridge) and os.environ.get(
+            "CCTP_TRIGGER_ENABLED", "true"
+        ).lower() not in ("false", "0", "no")
+        if cctp_enabled:
+            try:
+                bridges = get_cctp_bridges(limit=10)
+            except Exception:
+                logger.exception("get_cctp_bridges failed")
+                bridges = []
+
         return {
             "now_ms": int(time.time() * 1000),
             "uptime_seconds": int(time.time() - counters.get("started_at", time.time())),
@@ -207,6 +225,51 @@ def build_app(
             },
             "traces": traces,
             "sparkline": sparkline,
+            "cctp": {
+                "enabled": cctp_enabled,
+                "trigger_enabled": trigger_enabled,
+                "bridges": bridges,
+            },
         }
+
+    @app.post("/cctp/trigger")
+    async def cctp_trigger(amount_usdc: float = 1.0) -> dict[str, Any]:
+        """
+        Manually fire a CCTP bridge from Consumer → HL Master on Arb Sepolia.
+
+        Demo-only endpoint. Production use should integrate with the autonomous
+        low-margin trigger inside the agent loop (see `CCTPManager` in loop.py).
+        """
+        if not trigger_cctp_bridge:
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "error": "CCTP trigger not configured",
+                    "hint": "loop.py must inject trigger_cctp_bridge into dashboard",
+                },
+            )
+        if os.environ.get("CCTP_TRIGGER_ENABLED", "true").lower() in (
+            "false",
+            "0",
+            "no",
+        ):
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "error": "CCTP trigger is disabled",
+                    "hint": "set CCTP_TRIGGER_ENABLED=true in .env to enable",
+                },
+            )
+        # Hard cap so a bad-faith request can't drain the wallet
+        amount_usdc = max(0.1, min(amount_usdc, 5.0))
+        try:
+            result = await trigger_cctp_bridge(amount_usdc)
+            return {"ok": True, "result": result.to_dict() if hasattr(result, "to_dict") else result}
+        except Exception as e:
+            logger.exception("CCTP trigger failed")
+            return JSONResponse(
+                status_code=500,
+                content={"ok": False, "error": f"{type(e).__name__}: {str(e)[:200]}"},
+            )
 
     return app

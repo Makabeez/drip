@@ -31,6 +31,7 @@ load_dotenv()
 import uvicorn  # noqa: E402
 
 from dashboard import build_app  # noqa: E402
+from cctp import CCTPBridge, BridgeResult  # noqa: E402
 from decision import decide  # noqa: E402
 from executor import HLExecutor  # noqa: E402
 from reasoning import TRACE_TABLE_DDL, persist_trace  # noqa: E402
@@ -81,6 +82,31 @@ class AgentLoop:
         self._trades_opened: int = 0
         self._trades_closed: int = 0
 
+        # CCTP bridge — Consumer wallet sends, HL Master receives on Arb Sepolia
+        # The bridge is enabled if CONSUMER_PK + HL_MASTER_ADDRESS are set.
+        # Manual /cctp/trigger endpoint fires it; autonomous trigger is gated
+        # behind CCTP_AUTO_TRIGGER_ENABLED (default false for safety).
+        self._cctp: CCTPBridge | None = None
+        self._cctp_recipient: str | None = None
+        self._cctp_lock = asyncio.Lock()
+        self._cctp_last_trigger_at: float = 0.0
+        try:
+            if os.environ.get("CONSUMER_PK") and os.environ.get("HL_MASTER_ADDRESS"):
+                self._cctp = CCTPBridge(
+                    private_key=os.environ["CONSUMER_PK"],
+                    db=self._db,
+                )
+                self._cctp_recipient = os.environ["HL_MASTER_ADDRESS"]
+                logger.info(
+                    "CCTP bridge ready: Consumer → HL Master (%s) on Arb Sepolia",
+                    self._cctp_recipient,
+                )
+            else:
+                logger.warning("CCTP disabled: CONSUMER_PK or HL_MASTER_ADDRESS missing")
+        except Exception as e:
+            logger.exception("CCTP bridge init failed: %s", e)
+            self._cctp = None
+
     # ------------------------------------------------------------------
     # Public accessors (used by dashboard /state endpoint)
     # ------------------------------------------------------------------
@@ -99,6 +125,76 @@ class AgentLoop:
             "trades_closed": self._trades_closed,
             "position_opened_at": self._position_opened_at,
         }
+
+    # ------------------------------------------------------------------
+    # CCTP — Circle CCTP V2 bridge: Arc Testnet → Arbitrum Sepolia
+    # ------------------------------------------------------------------
+
+    def get_cctp_bridges(self, limit: int = 10) -> list[dict[str, Any]]:
+        """Return last N CCTP bridges from SQLite for dashboard rendering."""
+        if not self._cctp:
+            return []
+        try:
+            return self._cctp.list_bridges(limit=limit)
+        except Exception:
+            logger.exception("list_bridges failed")
+            return []
+
+    async def manual_trigger_cctp(self, amount_usdc: float = 1.0) -> "BridgeResult":
+        """
+        Fire a CCTP bridge from Consumer (Arc) → HL Master (Arb Sepolia).
+
+        Called by the dashboard POST /cctp/trigger endpoint. Serializes via
+        an asyncio.Lock so only one bridge runs at a time. Enforces a 60s
+        cooldown between bridges to prevent demo-button mashing.
+        """
+        if not self._cctp:
+            raise RuntimeError("CCTP bridge not initialized (check env vars)")
+
+        # Cooldown: don't allow back-to-back bridges within 60s
+        now = time.time()
+        cooldown_remaining = 60 - (now - self._cctp_last_trigger_at)
+        if cooldown_remaining > 0:
+            raise RuntimeError(
+                f"CCTP bridge cooldown: try again in {int(cooldown_remaining)}s"
+            )
+
+        async with self._cctp_lock:
+            self._cctp_last_trigger_at = time.time()
+            logger.info(
+                "Manual CCTP trigger: bridging %.2f USDC → HL Master on Arb Sepolia",
+                amount_usdc,
+            )
+            try:
+                await alert(
+                    AlertLevel.INFO,
+                    f"🌉 CCTP bridge starting: {amount_usdc:.2f} USDC → HL Master (Arb Sepolia)",
+                )
+            except Exception:
+                pass
+
+            result = await self._cctp.bridge_to_arb_sepolia(
+                amount_usdc=amount_usdc,
+                recipient=self._cctp_recipient,
+            )
+
+            try:
+                if result.success:
+                    await alert(
+                        AlertLevel.INFO,
+                        f"🌉 CCTP bridge complete in {result.total_seconds}s\n"
+                        f"  burn: {result.burn_tx[:10]}…\n"
+                        f"  mint: {result.mint_tx[:10]}…",
+                    )
+                else:
+                    await alert(
+                        AlertLevel.WARN,
+                        f"🌉 CCTP bridge failed: {result.error}",
+                    )
+            except Exception:
+                pass
+
+            return result
 
     # ------------------------------------------------------------------
     # Main loop
@@ -360,6 +456,8 @@ async def _serve_dashboard(agent: AgentLoop) -> None:
         get_risk_snapshot=agent.get_risk_snapshot,
         get_loop_counters=agent.get_counters,
         sqlite_path=SQLITE_PATH,
+        get_cctp_bridges=agent.get_cctp_bridges,
+        trigger_cctp_bridge=agent.manual_trigger_cctp,
     )
     config = uvicorn.Config(
         app,

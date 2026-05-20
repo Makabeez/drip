@@ -2,7 +2,7 @@
 
 # DRIP
 
-**Autonomous Hyperliquid perps agent that pays for its own signals on Arc.**
+**Autonomous Hyperliquid perps agent that pays for its own signals on Arc and bridges its own capital with CCTP.**
 
 [![Live tx](https://img.shields.io/badge/Arc%20Testnet-on--chain%20proof-4FC1FF?style=for-the-badge&logo=ethereum&logoColor=white)](https://testnet.arcscan.app/tx/0x583308ed6408c9709b8776765541b613c163eb27142d5e0ae637a176b5dc1688)
 [![Dashboard](https://img.shields.io/badge/Dashboard-drip.baserep.xyz-4EC9B0?style=for-the-badge)](https://drip.baserep.xyz)
@@ -13,11 +13,12 @@
 [![Arc](https://img.shields.io/badge/Built%20on-Arc-FF6B35)](https://www.arc.network)
 [![Hyperliquid](https://img.shields.io/badge/Trading-Hyperliquid-00D4AA)](https://hyperliquid.xyz)
 [![x402](https://img.shields.io/badge/Protocol-x402%20v2-9B6BFF)](https://www.x402.org)
+[![CCTP](https://img.shields.io/badge/Circle-CCTP%20V2-1F75FE)](https://developers.circle.com/cctp)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 
 </div>
 
-> No facilitator publicly supports Arc Testnet. So Drip ships its own. Every signal the agent buys settles on-chain in under a second, every trade is logged with a hashable reasoning trace, and the whole loop runs unattended.
+> Three Circle primitives in one autonomous agent: x402 v2 micropayments for signal purchase, EIP-3009 transferWithAuthorization for settlement, and CCTP V2 for cross-chain capital management. No facilitator publicly supports Arc Testnet, so Drip ships its own. Every signal the agent buys settles on-chain in under a second, every trade is logged with a hashable reasoning trace, and when margin runs low, the agent bridges its own USDC from Arc to Arbitrum Sepolia.
 
 ---
 
@@ -28,8 +29,9 @@ Most "AI trading agents" are LLM-prompted toys with no economic accountability. 
 - The **signal layer charges the agent layer** via x402 micropayments
 - The agent's PnL becomes the signal's quality benchmark
 - Every decision leaves a USDC-denominated trail on Arc
+- When margin runs low, the agent **bridges its own capital** across chains via Circle CCTP V2
 
-Pay-per-signal at $0.001 only works on Arc — sub-second finality, gas in USDC, native EIP-3009. This isn't a payment rail bolted onto an agent; it's the agent's metabolism.
+Pay-per-signal at $0.001 only works on Arc — sub-second finality, gas in USDC, native EIP-3009. Cross-chain margin top-ups only work cleanly with CCTP V2. Drip combines **three Circle primitives** in one autonomous agent: x402 v2 micropayments, EIP-3009 settlements, and CCTP V2 bridging. This isn't a payment rail bolted onto an agent — it's the agent's metabolism.
 
 ---
 
@@ -49,10 +51,19 @@ Pay-per-signal at $0.001 only works on Arc — sub-second finality, gas in USDC,
 │           ▼                       ▼                       ▼             │
 │   ┌──────────────────────────────────────────────────────────────────┐ │
 │   │              Risk Manager (cross-cutting)                         │ │
-│   │  · Daily kill switch (-2% NAV → halt 24h)                        │ │
+│   │  · Daily kill switch (-5% NAV → halt 24h)                        │ │
 │   │  · Liquidation protection (margin > 40% → auto-deleverage)       │ │
 │   │  · Telegram alerts on every safety event                         │ │
 │   │  · SQLite-persisted state, survives restarts                     │ │
+│   └──────────────────────────────────────────────────────────────────┘ │
+│                                  │                                       │
+│                                  ▼                                       │
+│   ┌──────────────────────────────────────────────────────────────────┐ │
+│   │              CCTP V2 Bridge (autonomous capital)                  │ │
+│   │  · Detects low HL margin → bridges from Arc to Arbitrum Sepolia  │ │
+│   │  · approve → depositForBurn → IRIS attest → receiveMessage       │ │
+│   │  · 8–60s end-to-end on testnet                                    │ │
+│   │  · Manual trigger via dashboard + autonomous (production gated)   │ │
 │   └──────────────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────────┘
             ▲                                                  │
@@ -77,14 +88,18 @@ Pay-per-signal at $0.001 only works on Arc — sub-second finality, gas in USDC,
 │  · On-chain on Arc     │                                    │
 └───────────┬────────────┘                                    │
             │                                                 │
-            ▼                                                 │
-┌─────────────────────────────────────────────────────────────────────────┐
-│                          ARC TESTNET                                     │
-│                                                                          │
-│  USDC ──── transferWithAuthorization ────▶ Seller wallet                 │
-│       Consumer (agent) → Seller (signal provider)                        │
-│       0.51s finality · gas paid in USDC                                  │
-└─────────────────────────────────────────────────────────────────────────┘
+            ▼                                                 ▼
+┌─────────────────────────────────┐   ┌────────────────────────────────┐
+│         ARC TESTNET             │   │      ARBITRUM SEPOLIA          │
+│                                 │   │                                │
+│  USDC ─── transferWithAuth ──▶ Seller│  HL settlement chain          │
+│  Consumer → Seller (signal pay) │   │  CCTP V2 mint destination     │
+│  0.51s finality · gas in USDC   │   │  HL Master receives bridged $  │
+└─────────────────────────────────┘   └────────────────────────────────┘
+                  │                                  ▲
+                  │ Consumer wallet                  │
+                  └──── CCTP V2 burn ────────────────┘
+                       (8s–60s, attest via Circle IRIS)
 ```
 
 ---
@@ -137,7 +152,9 @@ drip/
 ├── cascade_sim.py       # Synthetic BTC signal generator
 ├── serve.py             # Runs facilitator + emitter on :8090 / :8091
 │
-├── dashboard.py         # FastAPI /state endpoint
+├── cctp.py              # Circle CCTP V2 bridge — Arc → Arbitrum Sepolia
+│
+├── dashboard.py         # FastAPI /state + /cctp/trigger endpoint
 ├── static/index.html    # Bloomberg-aesthetic single-page dashboard
 │
 ├── telegram_alerts.py   # Alert helper via existing Makaclaw bot
@@ -209,6 +226,90 @@ Every signal payment is a real `transferWithAuthorization` call on Arc Testnet's
 | Status | ✅ Success |
 
 Click the tx hash to verify on Arc explorer.
+
+---
+
+## Cross-chain settlement (Circle CCTP V2)
+
+Drip extends past Arc with **Circle's Cross-Chain Transfer Protocol V2** for autonomous capital management. When Drip's Hyperliquid margin falls below threshold, the agent bridges USDC from its Arc Testnet operational wallet to its Arbitrum Sepolia settlement wallet (Hyperliquid's settlement chain) — without manual intervention, without exposed private keys, in seconds.
+
+### The 4-step bridge flow
+
+```
+Arc Testnet                                                Arbitrum Sepolia
+═════════════                                              ═════════════════
+
+   Consumer                                                     HL Master
+   wallet                                                        wallet
+     │                                                              │
+     │ ① approve()                                                   │
+     │   USDC ── 1000 ──► TokenMessengerV2                          │
+     │                                                              │
+     │ ② depositForBurn()                                            │
+     │   • burns USDC on Arc                                         │
+     │   • emits MessageSent event with dest=ARBITRUM(3)            │
+     │                                                              │
+     │                                                              │
+     ▼                                                              │
+   ┌──────────────────────────────────────────┐                    │
+   │ ③ Circle IRIS attestation service        │                    │
+   │   • signs the burn event with Circle keys│                    │
+   │   • returns (message, attestation) bytes │                    │
+   │   • finality time: 8s–10min on testnet   │                    │
+   └──────────────────────────────────────────┘                    │
+                                                                    │
+                                                                    │
+                                                ④ receiveMessage()  │
+                                                   USDC minted ◄────┘
+                                                   to HL Master
+```
+
+### Live bridges on testnet (real funds, real attestations)
+
+Drip has executed **two end-to-end Arc → Arbitrum Sepolia bridges** via the manual `/cctp/trigger` endpoint. All four contract calls are publicly verifiable:
+
+#### Bridge #2 — Production-correct: Consumer → HL Master, 1.00 USDC, **14 seconds total**
+
+| Step | Chain | Tx hash | Notes |
+|------|-------|---------|-------|
+| ① Approve | Arc Testnet | _skipped_ — allowance cached from prior bridge | Bridge code reuses existing allowance |
+| ② Burn | Arc Testnet | [`0x24b4ccb7…5b9a4a`](https://testnet.arcscan.app/tx/0x24b4ccb7194f2b1a44c52d687ff436d4252171c9a0bd287927e01a3eb75b9a4a) | `depositForBurn` on TokenMessengerV2 |
+| ③ Attestation | Circle IRIS | — | `messages[].status="complete"` in **8s** |
+| ④ Mint | Arb Sepolia | [`0x0f2058ef…5a59a2`](https://sepolia.arbiscan.io/tx/0x0f2058ef61e3c59157d33211c21373c2918c0b9bd736fd87fc04f85af25a59a2) | `receiveMessage` on MessageTransmitterV2 → +1 USDC to HL Master |
+
+#### Bridge #1 — Initial validation: self-bridge, 0.50 USDC, 643s total
+
+| Step | Chain | Tx hash |
+|------|-------|---------|
+| ① Approve | Arc Testnet | [`0x8153d57b…eed9ca`](https://testnet.arcscan.app/tx/0x8153d57b4b08dabc3fce62006a32cad94f5b494fdf504a88ffb760f001eed9ca) |
+| ② Burn | Arc Testnet | [`0xdedc0b69…e9a84c`](https://testnet.arcscan.app/tx/0xdedc0b692a2a804e9f2ac8a1330cc0f1d5d39adaea4a9813a06564d656e9a84c) |
+| ④ Mint | Arb Sepolia | [`0x0e3cbd57…b84036`](https://sepolia.arbiscan.io/tx/0x0e3cbd5769e288cf53650502a3a20e55250e8cf1d7b8d3379c2cafba6bb84036) |
+
+### Production path: Circle Crosschain Forwarding Service
+
+Bridge #2's USDC mint arrives at HL Master's Arb Sepolia address (`0xa480…30B0`). To get from there into the Hyperliquid perp margin pool, production Drip uses [Circle's Crosschain Forwarding Service](https://developers.circle.com/cctp/concepts/forwarding-service), which is specifically designed for the Hyperliquid use case — it removes the attestation polling and one-click bridges from CCTP-enabled chains directly into HL's orderbook DEX deposit flow.
+
+The Drip codebase implements the standard CCTP V2 path that any application can reuse; the Forwarding Service is the production-grade automation layer Circle hosts on top.
+
+### CCTP integration details
+
+- **`cctp.py`** — `CCTPBridge` class, ~530 lines, full 4-step flow with SQLite persistence
+- **TokenMessengerV2:** [`0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA`](https://testnet.arcscan.app/address/0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA) (same on Arc + Arb Sepolia)
+- **MessageTransmitterV2:** [`0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275`](https://sepolia.arbiscan.io/address/0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275)
+- **Domain IDs:** Arc Testnet = 26, Arbitrum = 3
+- **Standard transfer mode** (`minFinalityThreshold = 2000`) — Arc currently doesn't support Fast Transfer
+- **Cooldown:** 60s between manual triggers (prevents button-mashing)
+- **Trigger control:** dashboard button + `POST /cctp/trigger?amount_usdc=N`
+
+### Circle stack breadth
+
+Drip integrates **three independent Circle primitives** in a single autonomous agent:
+
+| # | Primitive | Where it lives | Verification |
+|---|-----------|----------------|--------------|
+| 1 | **x402 v2 micropayments** | every signal request → 402 challenge → settle | trade tape rows linking to Arc tx |
+| 2 | **EIP-3009 `transferWithAuthorization`** | self-hosted facilitator on Arc Testnet | facilitator at `0xE847…F7Bf` settles each payment |
+| 3 | **CCTP V2 cross-chain** | `cctp.py` orchestrates approve→burn→attest→mint | bridge table above |
 
 ---
 

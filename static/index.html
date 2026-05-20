@@ -316,12 +316,44 @@
   </div>
 </div>
 
+<!-- CCTP bridges panel — Circle CCTP V2 Arc Testnet → Arbitrum Sepolia -->
+<div class="grid-wide" style="margin-bottom: 12px;" id="cctp-section" hidden>
+  <div class="tape">
+    <div class="panel-title">
+      CCTP bridges <span class="meta" id="cctp-meta">— Arc Testnet → Arbitrum Sepolia</span>
+      <span style="float:right;">
+        <button id="cctp-trigger-btn" style="
+          background: var(--bg-panel-2);
+          border: 1px solid var(--border-strong);
+          color: var(--text-bright);
+          font-family: inherit;
+          font-size: 11px;
+          padding: 4px 10px;
+          cursor: pointer;
+          letter-spacing: 0.5px;
+        " hidden>TRIGGER 1 USDC TOP-UP</button>
+      </span>
+    </div>
+    <div class="tape-row header" style="grid-template-columns: 110px 90px 70px 90px 1fr 1fr 1fr;">
+      <span>time</span>
+      <span>amount</span>
+      <span>status</span>
+      <span>attest</span>
+      <span>approve tx</span>
+      <span>burn tx (arc)</span>
+      <span>mint tx (arb sep)</span>
+    </div>
+    <div id="cctp-body"></div>
+  </div>
+</div>
+
 <footer>
   DRIP · github.com/Makabeez · Agora Agents Hackathon · drip.baserep.xyz
 </footer>
 
 <script>
 const ARC_EXPLORER = "https://testnet.arcscan.app/tx/";
+const ARB_SEPOLIA_EXPLORER = "https://sepolia.arbiscan.io/tx/";
 const REFRESH_MS = 2000;
 
 function fmt$(v, dp = 2) {
@@ -485,7 +517,78 @@ async function refresh() {
       </span>
     </div>`;
   }).join("");
+
+  // CCTP bridges panel — show only when feature is enabled
+  const cctp = s.cctp || { enabled: false, bridges: [], trigger_enabled: false };
+  const cctpSection = document.getElementById("cctp-section");
+  const cctpBody = document.getElementById("cctp-body");
+  const cctpMeta = document.getElementById("cctp-meta");
+  const cctpBtn = document.getElementById("cctp-trigger-btn");
+  if (cctp.enabled) {
+    cctpSection.hidden = false;
+    const bridges = cctp.bridges || [];
+    cctpMeta.textContent = `— Arc Testnet → Arbitrum Sepolia · ${bridges.length} bridges`;
+    cctpBtn.hidden = !cctp.trigger_enabled;
+    cctpBody.innerHTML = bridges.length === 0
+      ? `<div class="row" style="grid-template-columns: 1fr;"><span class="muted">No bridges yet. Click "TRIGGER 1 USDC TOP-UP" to demo a Circle CCTP V2 bridge.</span></div>`
+      : bridges.map(b => {
+        const ts = fmtTime(b.started_at_ms);
+        const amt = `$${(b.amount_usdc || 0).toFixed(2)}`;
+        let statusCls = "hold", statusLabel = (b.status || "").toUpperCase();
+        if (b.status === "success") { statusCls = "long"; statusLabel = "SUCCESS"; }
+        else if (b.status === "failed") { statusCls = "short"; statusLabel = "FAILED"; }
+        else if (b.status === "in_progress") { statusCls = "hold"; statusLabel = "BRIDGING"; }
+
+        const attest = (b.attestation_received_ms && b.started_at_ms)
+          ? `${Math.round((b.attestation_received_ms - b.started_at_ms) / 1000)}s`
+          : "—";
+
+        const txCell = (tx, explorer) => {
+          if (!tx || tx.includes("skipped")) return `<span class="muted">—</span>`;
+          const txHex = tx.startsWith("0x") ? tx : `0x${tx}`;
+          const short = `${txHex.slice(0, 8)}…${txHex.slice(-6)}`;
+          return `<a href="${explorer}${txHex}" target="_blank" rel="noopener">${short}</a>`;
+        };
+
+        return `<div class="tape-row" style="grid-template-columns: 110px 90px 70px 90px 1fr 1fr 1fr;">
+          <span class="muted">${ts}</span>
+          <span>${amt}</span>
+          <span><span class="badge ${statusCls}">${statusLabel}</span></span>
+          <span class="muted">${attest}</span>
+          <span>${txCell(b.approve_tx, ARC_EXPLORER)}</span>
+          <span>${txCell(b.burn_tx, ARC_EXPLORER)}</span>
+          <span>${txCell(b.mint_tx, ARB_SEPOLIA_EXPLORER)}</span>
+        </div>`;
+      }).join("");
+  } else {
+    cctpSection.hidden = true;
+  }
 }
+
+// CCTP trigger button — fires POST /cctp/trigger
+document.addEventListener("DOMContentLoaded", () => {
+  const btn = document.getElementById("cctp-trigger-btn");
+  if (!btn) return;
+  btn.addEventListener("click", async () => {
+    if (!confirm("Bridge 1.0 USDC from Arc Testnet to Arbitrum Sepolia via Circle CCTP V2?\n\nThis takes ~2-3 minutes (approve + burn + attestation + mint).")) return;
+    btn.disabled = true;
+    btn.textContent = "BRIDGING…";
+    try {
+      const r = await fetch("/cctp/trigger?amount_usdc=1.0", { method: "POST" });
+      const j = await r.json();
+      if (j.ok) {
+        alert("Bridge complete!\n\nTotal: " + (j.result.total_seconds || "?") + "s\nMint tx: " + (j.result.mint_tx || "?"));
+      } else {
+        alert("Bridge failed: " + (j.error || "unknown"));
+      }
+    } catch (e) {
+      alert("Bridge request error: " + e.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "TRIGGER 1 USDC TOP-UP";
+    }
+  });
+});
 
 refresh();
 setInterval(refresh, REFRESH_MS);
