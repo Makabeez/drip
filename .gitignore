@@ -23,3 +23,6 @@ data/
 # Logs
 *.log
 logs/
+
+# CCTP one-off helpers (contain hardcoded message blobs)
+resume_mint.py
