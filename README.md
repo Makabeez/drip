@@ -357,7 +357,7 @@ See `.env.example` for the full list with annotated comments.
 | ✅ | Risk manager with kill switch + liq protection |
 | ✅ | Bloomberg-aesthetic dashboard with live trade tape |
 | ✅ | Public deployment at drip.baserep.xyz |
-| ✅ | CCTP V2 top-up (Arc → HL margin refill on threshold, manual trigger + autonomous gated)
+| ✅ | CCTP V2 top-up (Arc → HL margin refill on threshold, manual trigger + autonomous gated) |
 | ⬜ | Paymaster integration (USDC-only gas on agent's Arc txs) |
 | ⬜ | USYC idle margin sweep (yield on uninvested capital) |
 | ⬜ | Reasoning-trace marketplace (Irys-pinned daily bundles) |
