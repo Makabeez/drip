@@ -1,0 +1,33 @@
+[project]
+package-mode = false
+name = "drip"
+version = "0.1.0"
+description = "Autonomous HL perps agent on Arc — AlphaDrip v2"
+authors = [
+    {name = "Joe",email = "ganabay8@gmail.com"}
+]
+requires-python = "^3.10"
+dependencies = [
+    "hyperliquid-python-sdk (>=0.23.0,<0.24.0)",
+    "httpx (>=0.28.1,<0.29.0)",
+    "eth-account (>=0.13.7,<0.14.0)",
+    "web3 (>=7.16.0,<8.0.0)",
+    "sqlmodel (>=0.0.38,<0.0.39)",
+    "python-dotenv (>=1.2.2,<2.0.0)",
+    "fastapi (>=0.136.1,<0.137.0)",
+    "uvicorn (>=0.47.0,<0.48.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[dependency-groups]
+dev = [
+    "pytest (>=9.0.3,<10.0.0)",
+    "pytest-asyncio (>=1.3.0,<2.0.0)"
+]
+
+[tool.poetry]
+package-mode = false

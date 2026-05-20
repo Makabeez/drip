@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>DRIP · Autonomous HL Perps Agent</title>
+<style>
+  :root {
+    --bg: #0a0e14;
+    --bg-panel: #0f1419;
+    --bg-panel-2: #131922;
+    --border: #1f2630;
+    --border-strong: #2a3340;
+    --text: #c5d1de;
+    --text-dim: #6e7d92;
+    --text-bright: #ffffff;
+    --green: #4ec9b0;
+    --green-dim: #2e7a6a;
+    --red: #f48771;
+    --red-dim: #8a4a3f;
+    --amber: #e3b341;
+    --amber-dim: #8b6e23;
+    --blue: #4fc1ff;
+    --purple: #b392f0;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', 'Monaco', monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+  body { padding: 12px; }
+  a { color: var(--blue); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* Header */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 14px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    margin-bottom: 12px;
+  }
+  .brand {
+    display: flex; align-items: center; gap: 12px;
+  }
+  .logo {
+    font-size: 18px; font-weight: 700; letter-spacing: 0.08em;
+    color: var(--text-bright);
+  }
+  .brand-sub {
+    font-size: 11px; color: var(--text-dim); text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 10px;
+    background: var(--bg-panel-2);
+    border: 1px solid var(--border);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .dot.live  { background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 2s infinite; }
+  .dot.idle  { background: var(--amber); }
+  .dot.dead  { background: var(--red); }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  .header-stats { display: flex; gap: 18px; }
+  .header-stat { font-size: 11px; color: var(--text-dim); }
+  .header-stat span { color: var(--text-bright); font-weight: 500; margin-left: 4px; }
+
+  /* Grid */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .grid-wide {
+    display: grid;
+    grid-template-columns: 1.2fr 0.8fr;
+    gap: 12px;
+  }
+
+  /* Panels */
+  .panel {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    padding: 12px 14px;
+    min-height: 100px;
+  }
+  .panel-title {
+    font-size: 10px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .panel-title .meta { color: var(--text-dim); font-weight: 400; letter-spacing: 0; text-transform: none; }
+  .big-num {
+    font-size: 22px;
+    color: var(--text-bright);
+    font-weight: 500;
+    line-height: 1.1;
+  }
+  .sub-num {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 4px;
+  }
+  .row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 3px 0;
+    font-size: 11px;
+  }
+  .row .k { color: var(--text-dim); }
+  .row .v { color: var(--text); }
+  .pos { color: var(--green); }
+  .neg { color: var(--red); }
+  .warn { color: var(--amber); }
+  .muted { color: var(--text-dim); }
+
+  /* Trade tape */
+  .tape {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    padding: 10px 12px;
+  }
+  .tape-row {
+    display: grid;
+    grid-template-columns: 70px 36px 60px 80px 80px 70px 1fr 90px;
+    gap: 10px;
+    padding: 3px 0;
+    font-size: 11px;
+    border-bottom: 1px dashed var(--border);
+    align-items: center;
+  }
+  .tape-row:last-child { border-bottom: none; }
+  .tape-row.header {
+    color: var(--text-dim);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border-strong);
+  }
+  .badge {
+    display: inline-block;
+    padding: 1px 6px;
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    border: 1px solid currentColor;
+  }
+  .badge.long  { color: var(--green); }
+  .badge.short { color: var(--red); }
+  .badge.close { color: var(--amber); }
+  .badge.hold  { color: var(--text-dim); }
+
+  /* Signal histogram */
+  .conf-bar {
+    display: inline-block;
+    height: 10px;
+    background: var(--green-dim);
+    vertical-align: middle;
+  }
+
+  /* Risk gauge */
+  .gauge {
+    position: relative;
+    width: 100%;
+    height: 8px;
+    background: var(--bg-panel-2);
+    border: 1px solid var(--border);
+    margin-top: 8px;
+  }
+  .gauge-fill {
+    position: absolute;
+    top: 0; left: 0;
+    height: 100%;
+    background: var(--green);
+    transition: width 0.3s, background-color 0.3s;
+  }
+  .gauge-marker {
+    position: absolute;
+    top: -2px;
+    width: 1px;
+    height: 12px;
+    background: var(--red);
+  }
+  .gauge-legend {
+    display: flex; justify-content: space-between;
+    font-size: 10px; color: var(--text-dim);
+    margin-top: 4px;
+  }
+
+  /* Sparkline */
+  .spark { display: block; width: 100%; height: 40px; }
+
+  /* Footer */
+  footer {
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 10px;
+    padding: 12px 0;
+    letter-spacing: 0.08em;
+  }
+  footer a { color: var(--text-dim); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <span class="logo">DRIP</span>
+    <span class="brand-sub">Autonomous HL Perps Agent · Pay-per-signal on Arc</span>
+  </div>
+  <div class="header-stats">
+    <span class="header-stat">network <span id="hdr-net">—</span></span>
+    <span class="header-stat">uptime <span id="hdr-uptime">—</span></span>
+    <span class="status-pill"><span id="hdr-dot" class="dot idle"></span><span id="hdr-status">connecting</span></span>
+  </div>
+</header>
+
+<div class="grid">
+  <div class="panel">
+    <div class="panel-title">Account Value</div>
+    <div class="big-num"><span id="acct-value">—</span></div>
+    <div class="sub-num">peak <span id="acct-peak" class="muted">—</span></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Daily P&amp;L</div>
+    <div class="big-num"><span id="daily-pnl">—</span></div>
+    <div class="gauge">
+      <div class="gauge-fill" id="pnl-fill"></div>
+      <div class="gauge-marker" id="pnl-marker"></div>
+    </div>
+    <div class="gauge-legend">
+      <span id="pnl-loss-limit">—</span>
+      <span>0</span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Position</div>
+    <div class="big-num"><span id="pos-side">FLAT</span></div>
+    <div class="sub-num"><span id="pos-detail" class="muted">no exposure</span></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Risk</div>
+    <div class="big-num"><span id="kill-state">ARMED</span></div>
+    <div class="sub-num"><span id="kill-detail" class="muted">all safeties active</span></div>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="panel">
+    <div class="panel-title">Signals received</div>
+    <div class="big-num"><span id="cnt-signals">0</span></div>
+    <div class="sub-num muted">x402 paid · Arc Testnet</div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Trades opened</div>
+    <div class="big-num"><span id="cnt-opened">0</span></div>
+    <div class="sub-num muted">HL perps · API wallet</div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Trades closed</div>
+    <div class="big-num"><span id="cnt-closed">0</span></div>
+    <div class="sub-num muted">market · auto-managed</div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Total settled</div>
+    <div class="big-num"><span id="cnt-paid">0</span></div>
+    <div class="sub-num muted">USDC paid for signals</div>
+  </div>
+</div>
+
+<div class="grid-wide" style="margin-bottom: 12px;">
+  <div class="tape">
+    <div class="panel-title">Trade tape <span class="meta" id="tape-meta">— rows</span></div>
+    <div class="tape-row header">
+      <span>time</span>
+      <span>id</span>
+      <span>action</span>
+      <span>size</span>
+      <span>price</span>
+      <span>lev</span>
+      <span>notes</span>
+      <span>arc tx</span>
+    </div>
+    <div id="tape-body"></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Signal stream</div>
+    <div id="signal-stream"></div>
+  </div>
+</div>
+
+<footer>
+  DRIP · github.com/Makabeez · Agora Agents Hackathon · drip.baserep.xyz
+</footer>
+
+<script>
+const ARC_EXPLORER = "https://testnet.arcscan.app/tx/";
+const REFRESH_MS = 2000;
+
+function fmt$(v, dp = 2) {
+  if (v === null || v === undefined || isNaN(v)) return "—";
+  const sign = v < 0 ? "-$" : "$";
+  return sign + Math.abs(v).toFixed(dp).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+function fmtNum(v, dp = 4) {
+  if (v === null || v === undefined || isNaN(v)) return "—";
+  return Number(v).toFixed(dp);
+}
+function fmtDuration(secs) {
+  if (!secs || secs < 0) return "—";
+  if (secs < 60) return secs + "s";
+  if (secs < 3600) return Math.floor(secs / 60) + "m " + (secs % 60) + "s";
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  return h + "h " + m + "m";
+}
+function fmtTime(ms) {
+  if (!ms) return "—";
+  const d = new Date(ms);
+  return d.toLocaleTimeString("en-US", { hour12: false });
+}
+function shortTx(hash) {
+  if (!hash) return "—";
+  return hash.slice(0, 6) + "…" + hash.slice(-4);
+}
+
+async function refresh() {
+  let s;
+  try {
+    const resp = await fetch("/state");
+    if (!resp.ok) throw new Error("status " + resp.status);
+    s = await resp.json();
+  } catch (e) {
+    document.getElementById("hdr-dot").className = "dot dead";
+    document.getElementById("hdr-status").textContent = "disconnected";
+    return;
+  }
+
+  document.getElementById("hdr-dot").className = "dot live";
+  document.getElementById("hdr-status").textContent = "live";
+  document.getElementById("hdr-net").textContent = s.network || "testnet";
+  document.getElementById("hdr-uptime").textContent = fmtDuration(s.uptime_seconds);
+
+  // Account
+  document.getElementById("acct-value").textContent = fmt$(s.account.value_usd);
+  document.getElementById("acct-peak").textContent = fmt$(s.risk.peak_account_value);
+
+  // Daily PnL
+  const pnl = s.risk.daily_pnl_usd || 0;
+  const pnlEl = document.getElementById("daily-pnl");
+  pnlEl.textContent = (pnl >= 0 ? "+" : "") + fmt$(pnl);
+  pnlEl.className = "";
+  pnlEl.classList.add(pnl > 0 ? "pos" : pnl < 0 ? "neg" : "muted");
+
+  // PnL gauge
+  const lossLimit = Math.abs(s.risk.daily_loss_threshold_usd || -10);
+  const pnlFill = document.getElementById("pnl-fill");
+  const pnlMarker = document.getElementById("pnl-marker");
+  const fillPct = Math.min(100, Math.max(0, ((lossLimit + pnl) / lossLimit) * 100));
+  pnlFill.style.width = fillPct + "%";
+  pnlFill.style.background =
+    fillPct > 50 ? "var(--green)" : fillPct > 20 ? "var(--amber)" : "var(--red)";
+  pnlMarker.style.left = "0%";
+  document.getElementById("pnl-loss-limit").textContent = "-" + fmt$(lossLimit);
+
+  // Position
+  const pos = s.position;
+  const sideEl = document.getElementById("pos-side");
+  const detailEl = document.getElementById("pos-detail");
+  if (pos) {
+    sideEl.textContent = pos.side.toUpperCase();
+    sideEl.className = "";
+    sideEl.classList.add(pos.side === "long" ? "pos" : "neg");
+    const upnlSign = pos.unrealized_pnl_usd >= 0 ? "+" : "";
+    const upnlCls = pos.unrealized_pnl_usd >= 0 ? "pos" : "neg";
+    detailEl.innerHTML =
+      `${fmtNum(pos.size_btc, 5)} ${pos.coin} @ $${pos.entry_px.toLocaleString()} ` +
+      `· <span class="${upnlCls}">${upnlSign}${fmt$(pos.unrealized_pnl_usd, 4)}</span>`;
+  } else {
+    sideEl.textContent = "FLAT";
+    sideEl.className = "muted";
+    detailEl.textContent = "no exposure";
+  }
+
+  // Risk
+  const killState = document.getElementById("kill-state");
+  const killDetail = document.getElementById("kill-detail");
+  if (s.risk.kill_switch_tripped) {
+    killState.textContent = "HALTED";
+    killState.className = "neg";
+    killDetail.textContent = s.risk.kill_switch_reason || "kill switch tripped";
+  } else {
+    killState.textContent = "ARMED";
+    killState.className = "pos";
+    killDetail.textContent = `daily limit ${fmt$(s.risk.daily_loss_threshold_usd)}`;
+  }
+
+  // Counters
+  document.getElementById("cnt-signals").textContent = (s.counters.signals_received || 0).toLocaleString();
+  document.getElementById("cnt-opened").textContent = (s.counters.trades_opened || 0).toLocaleString();
+  document.getElementById("cnt-closed").textContent = (s.counters.trades_closed || 0).toLocaleString();
+  const paid = (s.traces || []).filter(t => t.payment_tx_hash).length;
+  document.getElementById("cnt-paid").textContent = paid.toLocaleString();
+
+  // Trade tape (only show actual trades, not holds, in the tape)
+  const tapeBody = document.getElementById("tape-body");
+  const tradeRows = (s.traces || []).filter(t => t.side !== "hold");
+  document.getElementById("tape-meta").textContent = tradeRows.length + " rows";
+  tapeBody.innerHTML = tradeRows.map(t => {
+    const ts = fmtTime(t.created_at_ms);
+    const sideCls = t.side || "hold";
+    const sideLabel = (t.side || "").toUpperCase();
+    const fillSz = t.fill_size !== null && t.fill_size !== undefined
+      ? fmtNum(t.fill_size, 5) : "—";
+    const fillPx = t.fill_price ? "$" + Number(t.fill_price).toLocaleString() : "—";
+    const lev = t.leverage ? t.leverage.toFixed(1) + "x" : "—";
+    const tpSl = (t.tp_px && t.sl_px)
+      ? `TP ${Math.round(t.tp_px)} / SL ${Math.round(t.sl_px)}`
+      : t.exec_error
+        ? `<span class="neg">err: ${t.exec_error.slice(0, 40)}</span>`
+        : "—";
+    const txLink = t.payment_tx_hash
+      ? `<a href="${ARC_EXPLORER}${t.payment_tx_hash}" target="_blank">${shortTx(t.payment_tx_hash)}</a>`
+      : "—";
+
+    return `<div class="tape-row">
+      <span class="muted">${ts}</span>
+      <span class="muted">${t.trace_id_short}</span>
+      <span><span class="badge ${sideCls}">${sideLabel}</span></span>
+      <span>${fillSz}</span>
+      <span>${fillPx}</span>
+      <span class="muted">${lev}</span>
+      <span class="muted">${tpSl}</span>
+      <span>${txLink}</span>
+    </div>`;
+  }).join("");
+
+  // Signal stream — all traces incl. holds
+  const ss = document.getElementById("signal-stream");
+  ss.innerHTML = (s.traces || []).slice(0, 12).map(t => {
+    const conf = t.signal_confidence;
+    const confWidth = conf ? Math.round(conf * 100) : 0;
+    const confLabel = conf ? conf.toFixed(2) : "—";
+    const sideCls = t.side || "hold";
+    const sideLabel = (t.side || "").toUpperCase();
+    const holdNote = t.hold_reason
+      ? `<span class="muted"> · ${t.hold_reason}</span>`
+      : "";
+    return `<div class="row">
+      <span>
+        <span class="muted">${fmtTime(t.created_at_ms)}</span>
+        <span style="margin-left:6px;" class="badge ${sideCls}">${sideLabel}</span>
+        ${holdNote}
+      </span>
+      <span>
+        <span class="conf-bar" style="width: ${confWidth * 0.7}px;"></span>
+        <span class="muted" style="margin-left:6px;">${confLabel}</span>
+      </span>
+    </div>`;
+  }).join("");
+}
+
+refresh();
+setInterval(refresh, REFRESH_MS);
+</script>
+</body>
+</html>
