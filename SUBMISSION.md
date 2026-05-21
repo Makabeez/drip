@@ -1,146 +1,152 @@
-# Drip — Agora Agents Hackathon Submission Packet
+# Drip — Agora Submission Packet v2
 
 > **Form:** https://forms.gle/ok3Gr9zhmHnApvK48
-> **Deadline:** May 25 2026 (asynchronous review after deadline)
-> **RFB targeted:** RFB 01 — Perpetual Futures Trading Agent
+> **Deadline:** May 25 2026
 >
-> Copy-paste each section into the corresponding form field.
+> Field-by-field answers ready to copy-paste. Each section maps 1:1 to the actual form.
 
 ---
 
-## Project name
+## Problem Statement *
 
-**Drip** — Autonomous Hyperliquid perps agent that pays for its own signals
+**(What problem is your project solving? What is compelling about this problem?)**
 
----
+AI trading agents today have zero economic accountability. An LLM prompted with "act as a trader" can claim to monitor 200 markets and make a thousand decisions a day — but none of those claims touch a counterparty, settle a transaction, or leave a verifiable trail. The agent costs nothing to run, so its outputs cost nothing.
 
-## Short tagline (one line)
+The result is a flood of "AI trader" demos that can't be evaluated, can't be priced, and can't compose with each other. Markets don't believe in things that don't pay rent.
 
-An autonomous perp trading agent that buys its signals on Arc via x402 micropayments and bridges its own capital cross-chain via CCTP V2 — three Circle primitives in one continuously running agent.
+What's compelling is that the inverse is now actually buildable. Arc's sub-second finality and USDC-as-gas mean a trading agent can pay $0.005 per signal it consumes without the gas costs eroding the entire margin. EIP-3009 means the agent settles by signature without ever holding a gas token. CCTP V2 means the agent can move its own capital across chains when its margin runs low — no human in the loop.
 
----
-
-## Project description (longer)
-
-Most "AI trading agents" are LLM-prompted toys with no economic accountability. Drip flips the model: the signal layer charges the agent layer, the agent's PnL becomes the signal's quality benchmark, and every decision leaves a USDC-denominated trail on Arc.
-
-The agent runs 24/7 on Hyperliquid testnet (BTC perps), polling a self-hosted x402 v2 emitter every 2 seconds. Each signal costs $0.005 USDC, paid via EIP-3009 `transferWithAuthorization` and settled by a self-hosted facilitator on Arc Testnet — no public facilitator supports Arc yet, so Drip ships its own.
-
-When a signal is purchased, the agent runs it through a decision engine (Kelly-sized position, vol-scaled leverage capped at 5x, kill switch + liq protection cross-cutting), then executes via the Hyperliquid Python SDK using a trade-only API wallet. Every decision is hashed and persisted as a reasoning trace.
-
-When margin runs low, the agent autonomously bridges USDC from Arc Testnet (its operational chain) to Arbitrum Sepolia (Hyperliquid's settlement chain) via Circle CCTP V2 — full approve → burn → IRIS attest → mint flow, real on-chain in ~14 seconds.
-
-The whole loop is unattended. Live dashboard streams state every 2s with on-chain proof links for every signal payment and bridge transaction.
+For the first time, you can run a 24/7 trading agent where every signal is paid for, every trade is on-chain, every decision is hashed, and the agent's PnL is the only metric that matters. That's the substrate Drip is built for: an agentic market where signal sellers, traders, and risk providers price their work in real USDC, continuously, at the speed of the underlying market.
 
 ---
 
-## RFB(s) targeted
+## Project Description
 
-**RFB 01 — Perpetual Futures Trading Agent** (primary, near-1:1 fit)
+**(Describe what your project does, how it works, and what tech you used.)**
 
-Concrete mapping:
-- 24/7 monitoring of Hyperliquid BTC-PERP ✅
-- Split-second decisions on leverage (Kelly + vol-scaled, max 5x) ✅
-- Liquidation protection (margin > 40% → kill switch, deleverage) ✅
-- Cross-chain collateral movement (CCTP V2 Arc → Arb Sepolia) ✅
-- Risk management framework with dynamic leverage adjustment ✅
-- Live dashboard at drip.baserep.xyz ✅
+Drip is an autonomous Hyperliquid perps trading agent that buys its own signals on Arc Testnet via x402 micropayments, executes BTC-PERP trades on Hyperliquid testnet, manages its own risk with a daily kill switch and liquidation protection, and bridges its own capital across chains via Circle CCTP V2 when margin drops.
+
+It targets RFB 01 (Perpetual Futures Trading Agent) — covering autonomous leverage decisions on Hyperliquid, dynamic SL/TP, liquidation protection, and cross-chain collateral movement.
+
+**How it works.** Every 2 seconds the agent polls a self-hosted x402 v2 emitter for the latest BTC signal. The emitter returns HTTP 402 with a price quote ($0.005 USDC); the agent signs an EIP-3009 `transferWithAuthorization`; a self-hosted facilitator on Arc Testnet verifies and submits the payment on-chain in ~0.5 seconds; the emitter releases the signal. The signal flows into a decision engine that applies Kelly sizing, vol-scaled leverage (capped at 5x), and pyramid/close-opposite rules. A cross-cutting risk manager enforces a daily 5% kill switch and a 40% margin-utilization liquidation guard. Approved decisions execute on Hyperliquid via the Python SDK using a trade-only API wallet. Every decision is hashed and persisted in SQLite as a reasoning trace.
+
+When account margin drops below threshold, the agent autonomously fires a CCTP V2 bridge: approve USDC on Arc → `depositForBurn` → poll Circle IRIS attestation → `receiveMessage` on Arbitrum Sepolia (Hyperliquid's settlement chain). Fastest end-to-end bridge: 14 seconds. The full bridge history is visible in the live dashboard with clickable tx links.
+
+**Tech stack.** Python 3.12, FastAPI for the facilitator and dashboard, web3.py for Arc + Arbitrum interaction, eth-account for EIP-3009 signing, the Hyperliquid Python SDK for trade execution, SQLite for persistence (risk state, reasoning traces, bridge history), PM2 + systemd for 24/7 operation, Cloudflare tunnel for the public dashboard at drip.baserep.xyz. ~3,000 lines of Python across 14 modules, MIT licensed. **Three Circle primitives integrated:** USDC on Arc, EIP-3009 `transferWithAuthorization` via self-hosted x402 facilitator, and CCTP V2 cross-chain.
 
 ---
 
-## GitHub repo
+## Traction *
+
+**(How many real people have tried the product? How much validation were you able to get from end users? Also include things like RTs / follows / stars here =))**
+
+The "user" is the agent itself — Drip is built for the case where the autonomous agent IS the customer. Traction numbers as of submission time:
+
+- **17h 26m+ continuous uptime** on a publicly accessible dashboard (drip.baserep.xyz), with PM2 + systemd autorestart and SQLite-persisted state across restarts
+- **11,720+ paid signals processed** via x402 micropayments on Arc Testnet — every single payment is a real on-chain `transferWithAuthorization` tx, viewable on Arc Explorer
+- **1,631 trades opened, 1,632 closed** on Hyperliquid BTC-PERP testnet — real fills via the API wallet, with real cumulative testnet notional ~$293k
+- **2 end-to-end CCTP V2 bridges** completed Arc Testnet → Arbitrum Sepolia. Fastest: 14 seconds end-to-end (approve + burn + IRIS attest + mint). Both visible in the live dashboard with clickable tx links on Arc and Arbiscan
+- **1 daily kill switch event** fired correctly at -5% NAV — proving the risk discipline actually works under live conditions, not just in code review
+- **Live dashboard public** since May 19, accessible globally via Cloudflare tunnel
+
+Public artifacts:
+- GitHub: github.com/Makabeez/drip — public, MIT, ~10 commits showing the build progression
+- X post (pinned): x.com/GeiserJoe2 — Day 6 announcement with dashboard screenshot, 3-Circle-primitives angle
+- LinkedIn post: published earlier today (collaborator boost) with the same 3-primitives angle
+
+The deeper validation is the code itself: it has run unattended for 17+ hours, processed five-figure transaction volume, survived its own kill switch tripping, and the dashboard is still serving from drip.baserep.xyz right now while you read this.
+
+---
+
+## Project Source Code *
 
 https://github.com/Makabeez/drip
 
-(MIT licensed, ~6 commits telling the build progression, every .py file documented inline.)
+---
+
+## Project Live
+
+https://drip.baserep.xyz/
 
 ---
 
-## Live product link
+## Project Video Demo *
 
-https://drip.baserep.xyz
-
-Live dashboard — Bloomberg-aesthetic, dark theme, auto-refreshes every 2 seconds. Shows account value, daily PnL, position, risk state, full trade tape with clickable Arc explorer links, signal stream with confidence bars, and a CCTP BRIDGES panel with a "TRIGGER 1 USDC TOP-UP" button judges can click to fire a live bridge.
+[TO FILL — Loom/YouTube link after D8 recording]
 
 ---
 
-## Video demo
+## Circle / Arc Feedback
 
-[TO RECORD ON D8 — placeholder. ~3 min Loom/YouTube walkthrough.]
+**(What worked with Circle / Arc, and where can Circle / Arc improve as a product and resources? Specificity and quality of your answer might win you a feedback award!)**
 
-Shot list (planned):
-1. Land on dashboard, point out 4 top tiles (account, PnL, position, risk)
-2. Highlight trade tape — click an Arc tx → it opens on explorer
-3. Highlight signal stream + confidence bars
-4. Scroll to CCTP BRIDGES panel
-5. Click TRIGGER 1 USDC TOP-UP → confirm dialog → watch bridge complete in ~15s
-6. New row appears with status SUCCESS + clickable mint tx on Arbiscan
-7. Zoom out: this is what 3 Circle primitives in 1 agent looks like
+### What worked
+
+**USDC-as-gas on Arc is the actual game-changer.** Pay-per-signal at $0.005 doesn't economically make sense on any other L1 we've worked with. Volatile gas tokens force builders to over-charge to cover variance; flat USDC-denominated fees let us price the signal at half a cent and still have margin after settlement gas. We've shipped on Celo, Base, Pacifica, and Arc this year — Arc is the only one where per-action pricing this small actually pencils out.
+
+**CCTP V2's IRIS attestation response is genuinely well-designed.** The `decodedMessageBody` field in the JSON saved us hours of debug time — we could see exactly what was being burned, to whom, and with what `mintRecipient` before ever submitting the destination tx. The same `TokenMessengerV2` address (`0x8FE6B999...`) across Arc Testnet and Arbitrum Sepolia is also a nice touch — felt very Stripe-API-like to have one constant work across chains.
+
+**Sub-second finality is psychologically transformational.** When the agent settles a signal payment in 0.5s, the architecture stops thinking about "pending → confirmed → finalized" lifecycle and just treats every tx as immediately-real. That mental shift unlocks designs (like our every-2-second poll loop) that would be impossible on slower chains.
+
+### Where we hit friction (the actually useful feedback)
+
+1. **No public x402 facilitator supports Arc Testnet.** We had to ship our own (`facilitator.py`, MIT-licensed in our repo) just to settle our own payments. Coinbase's facilitator is Base-only; there's no Circle-hosted alternative on Arc. This is the single biggest unlock missing — every project trying to build pay-per-action on Arc has to either ship their own facilitator or use Base instead. **Suggestion:** Circle should host a public x402 v2 facilitator on Arc Testnet (and ultimately mainnet). Happy to contribute our implementation as a starting point.
+
+2. **The IRIS V2 attestation API silently 404s on tx hashes missing the `0x` prefix.** Our first bridge polled for 5 minutes returning 404 because `Web3.to_bytes(...).hex()` in our web3.py version strips the prefix. The 404 gave no hint that the prefix was the issue. **Suggestion:** either accept both forms, or return a 400 with `"transactionHash must be 0x-prefixed"` to fail fast.
+
+3. **CCTP V2 on Arc Testnet doesn't support Fast Transfer (only Standard, `minFinalityThreshold = 2000`).** Our attestation latency varied wildly between bridges — 8 seconds in one test, 643 seconds in another. For an agent making "low margin → bridge" decisions, this latency variance is hard to plan around. **Suggestion:** publish p50 / p95 / p99 finality times for Arc Testnet attestations so builders can size their margin buffers correctly. Even a static "expect 30-300s on testnet" callout in the docs would help.
+
+4. **Arbitrum Sepolia rejects legacy `gasPrice` transactions when the base fee bumps mid-flight.** Our first `receiveMessage` call failed with `max fee per gas less than block base fee: maxFeePerGas: 20000000 baseFee: 20004000` — we were 4 wei short. Fixed by switching to EIP-1559 `maxFeePerGas` / `maxPriorityFeePerGas` with 2x headroom. **Suggestion:** the CCTP V2 docs / example code should explicitly recommend EIP-1559 type-2 transactions for `receiveMessage`. The Solidity reference is fine, but the JS/TS/Python integration examples should call this out.
+
+5. **Arc Testnet faucet rate-limits are a real blocker during active development.** Multi-day cooldowns on Arc and dependent chains (we needed Arb Sepolia ETH for `receiveMessage` gas — Alchemy faucet has 24h cooldown). When you're iterating fast, this can stop work entirely. **Suggestion:** Circle should run its own Arc Testnet faucet with more generous limits for whitelisted builders during hackathons.
+
+6. **"Unified Account" mode on Hyperliquid testnet UI breaks the Python SDK silently.** Not Circle's problem per se, but worth flagging for the CCTP-to-HL forwarding case: if a builder enables Unified Account mode in the HL UI, `marginSummary` returns `accountValue=0.0` and `assetPositions=[]` even when the UI shows balance. This took us hours to diagnose. The CCTP-to-HL forwarding service docs should call this out.
+
+### What we'd love Circle to ship next
+
+- **A hosted x402 v2 facilitator on Arc Testnet + mainnet** — #1 ask, would unlock dozens of pay-per-action projects
+- **Circle Crosschain Forwarding Service on testnet** — currently mainnet-only; Drip's HL deposit step needs exactly this, but we can't demo it
+- **Native Paymaster on Arc with one-line SDK integration** — would let agents skip the "facilitator pays gas" pattern entirely
+- **A canonical reference implementation for an agent that manages its own multi-chain treasury** combining Gateway + CCTP + USYC — every builder is reinventing this; one official reference would compress development time materially
 
 ---
 
-## Traction metrics (the form will ask)
+## General Feedback
 
-**As of May 21, 2026, 16:30 UTC:**
-
-- **17h 26m continuous uptime** of the autonomous agent (across PM2 restarts, state persisted in SQLite)
-- **11,720 paid signals processed** via x402 v2 micropayments on Arc Testnet
-- **1,631 trades opened** on Hyperliquid BTC-PERP
-- **1,632 trades closed** with realized PnL
-- **293,000+ USDC cumulative notional traded** (testnet)
-- **2 end-to-end CCTP V2 bridges** Arc Testnet → Arbitrum Sepolia, fastest 14s end-to-end
-- **1 daily kill switch event** correctly fired at -5% NAV threshold (risk discipline proven)
-- **Live URL accessible** at drip.baserep.xyz (Cloudflare tunnel on PM2-managed WSL VPS)
-
-User problem we're building for: **AI trading agents today have zero economic accountability**. They prompt-engineer their way through markets without ever touching a counterparty or settling a transaction. Drip is the opposite: every signal is paid for, every trade is on-chain, every decision is hashable, and the agent's PnL is the only metric that matters. We're building toward a future where agentic commerce is the substrate, not a feature.
-
----
-
-## Circle Product Feedback (the $500 bonus field)
-
-### Circle products used in Drip
-
-| Product | How we used it | Why we chose it |
-|---|---|---|
-| **USDC on Arc Testnet** | Native settlement for every signal payment ($0.005 each) and as the chain's native gas | The "gas in USDC" property is the entire premise of pay-per-signal economics. No other L1 makes per-signal pricing make sense. |
-| **EIP-3009 `transferWithAuthorization`** | Every x402 v2 micropayment uses a signed authorization, submitted by our self-hosted facilitator | The agent signs once and never holds gas tokens — facilitator pays gas, agent settles in USDC. Removes the "agent needs to source gas" problem entirely. |
-| **CCTP V2 (Cross-Chain Transfer Protocol)** | Bridges USDC from Arc Testnet (operational chain) to Arbitrum Sepolia (Hyperliquid's settlement chain) when margin drops | The agent shouldn't need a human to top up its margin. CCTP V2 lets it move its own capital cross-chain autonomously. |
+**(What worked well? What didn't? What could the Canteen team improve for future hackathons?)**
 
 ### What worked well
 
-- **USDC-as-gas on Arc** — sub-second finality and predictable dollar-denominated fees made the pay-per-signal economics actually viable. We could not have built this on any other L1.
-- **CCTP V2 attestation flow** — the IRIS API returned `status: complete` in 8 seconds on one of our bridges, with the full decoded message body. The attestation JSON includes a `decodedMessageBody` field that's a delight to debug against.
-- **Same contract addresses across testnets** — `TokenMessengerV2` at `0x8FE6B999...` works identically on Arc Testnet and Arbitrum Sepolia. Made the integration almost trivial once we had the constants right.
+- **The RFB format is excellent.** "Here are six concrete problems worth solving, but build whatever excites you" struck exactly the right balance between direction and freedom. RFB 01 mapped near-1:1 to what I wanted to build, which removed friction from "but is this a good fit?" second-guessing.
+- **The judging rubric being published in advance** (30/30/20/20) let me prioritize correctly. I knew "traction" was as valuable as "innovation" and could plan two weeks accordingly instead of leaving the public deployment for the last day.
+- **The Canteen + Arc Discord channels** had actual human energy and useful technical context. Quality > quantity of channels.
+- **Async final judging (no live demo day required)** is a huge accessibility win. As a solo builder in Geneva on European time, not having to fly anywhere or attend a specific demo slot let me ship a better project.
+- **Two weeks is the right duration** — long enough to ship something real, short enough to maintain momentum.
 
-### Friction points (the actually useful feedback)
+### What was hard
 
-1. **No public x402 facilitator supports Arc Testnet yet.** We had to ship our own. This is the single biggest blocker for anyone wanting to build pay-per-action on Arc — Coinbase's facilitator is Base-only, and there's no Circle-hosted alternative. **Suggestion:** Circle should run a hosted x402 facilitator on Arc, or publish an MIT-licensed reference one that supports the V2 schema. (We'd happily contribute ours, see `facilitator.py` in our repo.)
+- **No public x402 facilitator on Arc made the entry barrier sharper than it needed to be.** Probably half the RFBs implicitly assume facilitator infrastructure is available — for pay-per-action work, you have to ship your own. Not a complaint, just a real cost.
+- **The fragmentation between Arc docs, Circle docs, Hyperliquid docs, and CCTP V2 docs** meant a lot of context-switching. A "build an agent on Arc that trades on HL using x402 + CCTP" recipe would have shortcut a week of integration work for me. (And I bet most RFB 01 + RFB 05 builders.)
+- **Faucet limits** as noted above — real friction on testnet iteration speed.
 
-2. **IRIS V2 attestation API silently 404s on tx hashes without `0x` prefix.** Our first bridge spent 5 minutes polling because `Web3.to_bytes(...).hex()` returns the hash without the prefix in our version of web3.py, and the IRIS endpoint requires it. The 404 response gives no hint that the prefix is the issue. **Suggestion:** either accept both prefix forms, or return a 400 with a hint like `"transactionHash must be 0x-prefixed"`.
+### Suggestions for next time
 
-3. **Arc Testnet faucet rate-limits sharply.** During testing we needed Arb Sepolia ETH for `receiveMessage` gas and bumped into multi-day cooldowns on Alchemy's faucet. Not Circle's problem directly, but the CCTP V2 docs could note "you also need destination-chain gas to call `receiveMessage`" up-front. We almost missed it.
+- **Publish a "x402 on Arc starter pack"** — a minimal client + facilitator template builders can clone instead of writing from scratch. Could be a hackathon repo, doesn't have to be production-grade.
+- **Office hours from Circle / Arc engineers** during the build window (paired with the existing Discord) would let solo builders unblock faster. Even one hour twice a week would be massively valuable.
+- **An "early traction" milestone at the halfway point** — encouraging projects to ship publicly before final submission would surface real engagement vs last-week scrambles. Could be lightweight: "post your live URL by Day 7 to be eligible for [small bonus]."
+- **A "Circle stack breadth" sub-prize** — for projects that integrate 3+ Circle primitives. Would push more builders to actually use multiple products instead of one. (Drip would have won this one easily.)
+- **An optional 1:1 with the Circle product team after submission**, even 15 minutes, for builders who provided detailed feedback. The form's $500 incentive is good; the actual feedback loop with the team would be even more valuable.
 
-4. **Arc Testnet base fee fluctuates fast enough to reject legacy `gasPrice`-style transactions.** We had to switch our `_step_mint` call to EIP-1559 `maxFeePerGas` / `maxPriorityFeePerGas` with 2x headroom after seeing `max fee per gas less than block base fee` errors mid-flight. **Suggestion:** the Arc docs should explicitly recommend EIP-1559 type-2 transactions for anything touching the bridge.
-
-5. **CCTP V2 doesn't support Fast Transfer from Arc Testnet** (only Standard, `minFinalityThreshold = 2000`). This means attestation latency is variable — we saw 8 seconds in one test, 643 seconds in another. For an agent making "low margin → bridge" decisions, this latency variance is hard to plan around. **Suggestion:** publish the typical p50/p95/p99 finality times for Arc Testnet attestations so builders can size their margin buffers correctly.
-
-### What we'd like Circle to ship next
-
-- **Hosted x402 facilitator on Arc** (#1 ask, would unlock dozens of projects)
-- **Circle Crosschain Forwarding Service availability for testnet** — the production-grade automation that abstracts away attestation polling is exactly what Drip's HL deposit step would use, but it's mainnet-only today
-- **Native Paymaster on Arc** with one-line SDK integration — would let agents skip even the "facilitator pays gas" pattern entirely
-- **A reference implementation for "agent managing its own multi-chain treasury"** combining Gateway + CCTP + USYC. Right now builders cobble these together; one canonical reference would compress development time materially.
-
----
-
-## Team
-
-**Joe Geiser** ([@GeiserJoe2](https://x.com/GeiserJoe2), [Makabeez](https://github.com/Makabeez) on GitHub) — solo builder, based in Geneva, Switzerland. Former proprietary trader, now building onchain. Active hackathon participant; recent projects include AlphaDrip (lablab.ai Agentic Economy on Arc), PropRail (USDC payout rail for prop firms), and Scavenger (Pacifica liquidation sniper).
+Overall: best-run hackathon I've participated in this year. The Heraclitus quotes were a nice touch.
 
 ---
 
-## License
+## Quick prep checklist before hitting submit
 
-MIT — see [LICENSE](https://github.com/Makabeez/drip/blob/main/LICENSE) in the repo.
-
-Use it, fork it, ship something better.
+- [ ] Verify drip.baserep.xyz is responding (curl /health)
+- [ ] Verify github.com/Makabeez/drip latest commit is pushed
+- [ ] Verify CCTP panel renders with at least one SUCCESS row (judges will click around)
+- [ ] Demo video recorded + uploaded (max 3min, Loom/YouTube/Vimeo)
+- [ ] Re-read this packet end-to-end (catch any factual drift)
+- [ ] Submit ~24h before deadline for safety, then watch for any field errors
