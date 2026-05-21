@@ -86,6 +86,7 @@ class AgentLoop:
         # The bridge is enabled if CONSUMER_PK + HL_MASTER_ADDRESS are set.
         # Manual /cctp/trigger endpoint fires it; autonomous trigger is gated
         # behind CCTP_AUTO_TRIGGER_ENABLED (default false for safety).
+        self._kill_switch_logged: bool = False
         self._cctp: CCTPBridge | None = None
         self._cctp_recipient: str | None = None
         self._cctp_lock = asyncio.Lock()
@@ -228,6 +229,17 @@ class AgentLoop:
         if await self._maybe_intratrade_close():
             return
         if await self._maybe_time_stop():
+            return
+
+        # Reset throttle flag when kill switch is clear (logs once per trip).
+        if not self._risk.kill_switch_tripped:
+            self._kill_switch_logged = False
+        # Cost-saving: skip paid signal fetch while kill switch is tripped.
+        # Positions still close via _maybe_intratrade_close / _maybe_time_stop above.
+        if self._risk.kill_switch_tripped:
+            if not self._kill_switch_logged:
+                logger.info("Kill switch tripped \u2014 skipping paid signal fetch until day rollover")
+                self._kill_switch_logged = True
             return
 
         try:
