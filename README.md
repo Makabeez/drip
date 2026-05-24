@@ -18,6 +18,14 @@
 
 </div>
 
+## 🎬 Demo
+
+[![Drip — 3-minute demo](https://img.youtube.com/vi/uKpg8CnP5Cw/maxresdefault.jpg)](https://youtu.be/uKpg8CnP5Cw)
+
+*[Watch on YouTube](https://youtu.be/uKpg8CnP5Cw) — 3-minute walkthrough of the dashboard, live trading, kill-switch logic, and a live CCTP V2 bridge trigger Arc → Arbitrum Sepolia.*
+
+---
+
 > Three Circle primitives in one autonomous agent: x402 v2 micropayments for signal purchase, EIP-3009 transferWithAuthorization for settlement, and CCTP V2 for cross-chain capital management. No facilitator publicly supports Arc Testnet, so Drip ships its own. Every signal the agent buys settles on-chain in under a second, every trade is logged with a hashable reasoning trace, and when margin runs low, the agent bridges its own USDC from Arc to Arbitrum Sepolia.
 
 ---

@@ -73,7 +73,7 @@ https://drip.baserep.xyz/
 
 ## Project Video Demo *
 
-[TO FILL — Loom/YouTube link after D8 recording]
+https://youtu.be/uKpg8CnP5Cw
 
 ---
 
